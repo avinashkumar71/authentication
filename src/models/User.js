@@ -20,6 +20,22 @@ const userSchema = new mongoose.Schema(
       minlength: 6,
       select: false,
     },
+    refreshTokens: [
+      {
+        tokenHash: {
+          type: String,
+          required: true,
+        },
+        expiresAt: {
+          type: Date,
+          required: true,
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
   },
   {
     timestamps: true,
