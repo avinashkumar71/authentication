@@ -7,6 +7,7 @@ This project contains a starter backend structure for the authentication module 
 - MongoDB connection with Mongoose
 - Auth routes for register/login/profile
 - JWT-based route protection
+- Access + refresh token architecture with rotation support
 - Request validation with `express-validator`
 - Centralized error handling
 
@@ -52,5 +53,13 @@ src/
 ## API endpoints
 - `POST /api/auth/register`
 - `POST /api/auth/login`
-- `GET /api/auth/me` (requires `Authorization: Bearer <token>`)
+- `POST /api/auth/refresh-token`
+- `POST /api/auth/logout`
+- `GET /api/auth/me` (requires `Authorization: Bearer <access_token>`)
 - `GET /api/health`
+
+## Token architecture notes
+- Login/register now issue **access token + refresh token** pair.
+- Refresh token is stored as a SHA-256 hash in DB and rotated on refresh.
+- Access token verification enforces issuer, audience, algorithm, and `tokenType=access`.
+- If a reused/unknown refresh token is detected, all stored refresh tokens for that user are revoked.
