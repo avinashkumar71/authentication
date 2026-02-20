@@ -5,8 +5,10 @@ const {
   refreshAccessToken,
   logoutUser,
   getProfile,
+  getCsrfToken,
 } = require('../controllers/authController');
 const { protect } = require('../middlewares/authMiddleware');
+const { requireCsrf } = require('../middlewares/csrfMiddleware');
 const validateRequest = require('../middlewares/validateRequest');
 const {
   registerValidator,
@@ -16,10 +18,11 @@ const {
 
 const router = express.Router();
 
+router.get('/csrf-token', getCsrfToken);
 router.post('/register', registerValidator, validateRequest, registerUser);
 router.post('/login', loginValidator, validateRequest, loginUser);
-router.post('/refresh-token', refreshTokenValidator, validateRequest, refreshAccessToken);
-router.post('/logout', refreshTokenValidator, validateRequest, logoutUser);
+router.post('/refresh-token', requireCsrf, refreshTokenValidator, validateRequest, refreshAccessToken);
+router.post('/logout', requireCsrf, refreshTokenValidator, validateRequest, logoutUser);
 router.get('/me', protect, getProfile);
 
 module.exports = router;

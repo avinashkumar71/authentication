@@ -1,13 +1,15 @@
 const jwt = require('jsonwebtoken');
+const { getAccessTokenFromRequest } = require('../utils/authCookies');
 
 const protect = (req, res, next) => {
   const authHeader = req.headers.authorization;
+  const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+  const cookieToken = getAccessTokenFromRequest(req);
+  const token = cookieToken || bearerToken;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!token) {
     return res.status(401).json({ message: 'Not authorized, token missing' });
   }
-
-  const token = authHeader.split(' ')[1];
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET, {

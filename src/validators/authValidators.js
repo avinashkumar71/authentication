@@ -1,4 +1,5 @@
 const { body } = require('express-validator');
+const { refreshCookieName } = require('../utils/authCookies');
 
 const registerValidator = [
   body('name').trim().notEmpty().withMessage('Name is required'),
@@ -14,7 +15,17 @@ const loginValidator = [
 ];
 
 const refreshTokenValidator = [
-  body('refreshToken').isString().notEmpty().withMessage('Refresh token is required'),
+  body('refreshToken')
+    .optional()
+    .isString()
+    .withMessage('Refresh token must be a string'),
+  body().custom((_, { req }) => {
+    if (req.body.refreshToken || req.cookies[refreshCookieName]) {
+      return true;
+    }
+
+    throw new Error('Refresh token is required');
+  }),
 ];
 
 module.exports = { registerValidator, loginValidator, refreshTokenValidator };
