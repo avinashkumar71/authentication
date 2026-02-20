@@ -31,6 +31,7 @@ src/
   routes/
     authRoutes.js
   utils/
+    authCookies.js
     generateToken.js
   validators/
     authValidators.js
@@ -59,7 +60,7 @@ src/
 - `GET /api/health`
 
 ## Token architecture notes
-- Login/register now issue **access token + refresh token** pair.
-- Refresh token is stored as a SHA-256 hash in DB and rotated on refresh.
+- Login/register issue an access token in the response body and set refresh token in an `HttpOnly` cookie.
+- Refresh token is stored as a SHA-256 hash in DB and rotated on refresh (cookie or body token accepted for compatibility).
 - Access token verification enforces issuer, audience, algorithm, and `tokenType=access`.
 - If a reused/unknown refresh token is detected, all stored refresh tokens for that user are revoked.

@@ -6,6 +6,11 @@ const {
   generateRefreshToken,
   hashToken,
 } = require('../utils/generateToken');
+const {
+  setRefreshTokenCookie,
+  clearRefreshTokenCookie,
+  getRefreshTokenFromRequest,
+} = require('../utils/authCookies');
 
 const jwtIssuer = process.env.JWT_ISSUER || 'authentication-service';
 const jwtAudience = process.env.JWT_AUDIENCE || 'authentication-client';
@@ -51,6 +56,7 @@ const registerUser = async (req, res, next) => {
     });
 
     const { accessToken, refreshToken } = await issueTokenPair(user);
+    setRefreshTokenCookie(res, refreshToken);
 
     return res.status(201).json({
       message: 'User registered successfully',
@@ -60,7 +66,6 @@ const registerUser = async (req, res, next) => {
         email: user.email,
       },
       accessToken,
-      refreshToken,
     });
   } catch (error) {
     return next(error);
@@ -86,6 +91,7 @@ const loginUser = async (req, res, next) => {
     }
 
     const { accessToken, refreshToken } = await issueTokenPair(user);
+    setRefreshTokenCookie(res, refreshToken);
 
     return res.status(200).json({
       message: 'Login successful',
@@ -95,7 +101,6 @@ const loginUser = async (req, res, next) => {
         email: user.email,
       },
       accessToken,
-      refreshToken,
     });
   } catch (error) {
     return next(error);
@@ -104,7 +109,11 @@ const loginUser = async (req, res, next) => {
 
 const refreshAccessToken = async (req, res, next) => {
   try {
-    const { refreshToken } = req.body;
+    const refreshToken = getRefreshTokenFromRequest(req);
+
+    if (!refreshToken) {
+      return res.status(401).json({ message: 'Invalid refresh token' });
+    }
 
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, {
       issuer: jwtIssuer,
@@ -142,11 +151,11 @@ const refreshAccessToken = async (req, res, next) => {
     await user.save();
 
     const { accessToken, refreshToken: rotatedRefreshToken } = await issueTokenPair(user);
+    setRefreshTokenCookie(res, rotatedRefreshToken);
 
     return res.status(200).json({
       message: 'Token refreshed successfully',
       accessToken,
-      refreshToken: rotatedRefreshToken,
     });
   } catch (error) {
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
@@ -159,7 +168,11 @@ const refreshAccessToken = async (req, res, next) => {
 
 const logoutUser = async (req, res, next) => {
   try {
-    const { refreshToken } = req.body;
+    const refreshToken = getRefreshTokenFromRequest(req);
+
+    if (!refreshToken) {
+      return res.status(400).json({ message: 'Invalid refresh token payload' });
+    }
 
     const decoded = jwt.decode(refreshToken);
 
@@ -177,6 +190,8 @@ const logoutUser = async (req, res, next) => {
       );
       await user.save();
     }
+
+    clearRefreshTokenCookie(res);
 
     return res.status(200).json({ message: 'Logout successful' });
   } catch (error) {
