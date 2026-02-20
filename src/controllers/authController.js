@@ -7,9 +7,11 @@ const {
   hashToken,
 } = require('../utils/generateToken');
 const {
-  setRefreshTokenCookie,
-  clearRefreshTokenCookie,
+  setAuthCookies,
+  clearAuthCookies,
   getRefreshTokenFromRequest,
+  generateCsrfToken,
+  setCsrfCookie,
 } = require('../utils/authCookies');
 
 const jwtIssuer = process.env.JWT_ISSUER || 'authentication-service';
@@ -56,7 +58,8 @@ const registerUser = async (req, res, next) => {
     });
 
     const { accessToken, refreshToken } = await issueTokenPair(user);
-    setRefreshTokenCookie(res, refreshToken);
+    setAuthCookies(res, { accessToken, refreshToken });
+    setCsrfCookie(res, generateCsrfToken());
 
     return res.status(201).json({
       message: 'User registered successfully',
@@ -65,7 +68,6 @@ const registerUser = async (req, res, next) => {
         name: user.name,
         email: user.email,
       },
-      accessToken,
     });
   } catch (error) {
     return next(error);
@@ -91,7 +93,8 @@ const loginUser = async (req, res, next) => {
     }
 
     const { accessToken, refreshToken } = await issueTokenPair(user);
-    setRefreshTokenCookie(res, refreshToken);
+    setAuthCookies(res, { accessToken, refreshToken });
+    setCsrfCookie(res, generateCsrfToken());
 
     return res.status(200).json({
       message: 'Login successful',
@@ -100,7 +103,6 @@ const loginUser = async (req, res, next) => {
         name: user.name,
         email: user.email,
       },
-      accessToken,
     });
   } catch (error) {
     return next(error);
@@ -151,11 +153,11 @@ const refreshAccessToken = async (req, res, next) => {
     await user.save();
 
     const { accessToken, refreshToken: rotatedRefreshToken } = await issueTokenPair(user);
-    setRefreshTokenCookie(res, rotatedRefreshToken);
+    setAuthCookies(res, { accessToken, refreshToken: rotatedRefreshToken });
+    setCsrfCookie(res, generateCsrfToken());
 
     return res.status(200).json({
       message: 'Token refreshed successfully',
-      accessToken,
     });
   } catch (error) {
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
@@ -191,9 +193,21 @@ const logoutUser = async (req, res, next) => {
       await user.save();
     }
 
-    clearRefreshTokenCookie(res);
+    clearAuthCookies(res);
 
     return res.status(200).json({ message: 'Logout successful' });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+
+const getCsrfToken = async (req, res, next) => {
+  try {
+    const csrfToken = generateCsrfToken();
+    setCsrfCookie(res, csrfToken);
+
+    return res.status(200).json({ csrfToken });
   } catch (error) {
     return next(error);
   }
@@ -220,4 +234,5 @@ module.exports = {
   refreshAccessToken,
   logoutUser,
   getProfile,
+  getCsrfToken,
 };

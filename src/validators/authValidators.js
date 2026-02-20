@@ -1,5 +1,5 @@
 const { body } = require('express-validator');
-const { cookieName } = require('../utils/authCookies');
+const { refreshCookieName } = require('../utils/authCookies');
 
 const registerValidator = [
   body('name').trim().notEmpty().withMessage('Name is required'),
@@ -20,7 +20,7 @@ const refreshTokenValidator = [
     .isString()
     .withMessage('Refresh token must be a string'),
   body().custom((_, { req }) => {
-    if (req.body.refreshToken || req.cookies[cookieName]) {
+    if (req.body.refreshToken || req.cookies[refreshCookieName]) {
       return true;
     }
 
