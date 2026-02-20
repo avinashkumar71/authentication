@@ -1,6 +1,39 @@
+const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
-const generateToken = require('../utils/generateToken');
+const {
+  generateAccessToken,
+  generateRefreshToken,
+  hashToken,
+} = require('../utils/generateToken');
+const {
+  setAuthCookies,
+  clearAuthCookies,
+  getRefreshTokenFromRequest,
+} = require('../utils/tokenCookies');
+
+const jwtIssuer = process.env.JWT_ISSUER || 'authentication-service';
+const jwtAudience = process.env.JWT_AUDIENCE || 'authentication-client';
+const refreshTokenExpiresInSeconds = Number(process.env.JWT_REFRESH_TOKEN_EXPIRES_IN_SECONDS || 7 * 24 * 60 * 60);
+
+const getRefreshTokenExpiry = () => new Date(Date.now() + refreshTokenExpiresInSeconds * 1000);
+
+const issueTokenPair = async (user) => {
+  const accessToken = generateAccessToken(user._id.toString());
+  const refreshToken = generateRefreshToken(user._id.toString());
+
+  user.refreshTokens = (user.refreshTokens || []).filter(
+    (entry) => entry.expiresAt > new Date()
+  );
+  user.refreshTokens.push({
+    tokenHash: hashToken(refreshToken),
+    expiresAt: getRefreshTokenExpiry(),
+  });
+
+  await user.save();
+
+  return { accessToken, refreshToken };
+};
 
 const registerUser = async (req, res, next) => {
   try {
@@ -19,7 +52,11 @@ const registerUser = async (req, res, next) => {
       name,
       email,
       password: hashedPassword,
+      refreshTokens: [],
     });
+
+    const { accessToken, refreshToken } = await issueTokenPair(user);
+    setAuthCookies(res, { accessToken, refreshToken });
 
     return res.status(201).json({
       message: 'User registered successfully',
@@ -28,7 +65,6 @@ const registerUser = async (req, res, next) => {
         name: user.name,
         email: user.email,
       },
-      token: generateToken(user._id),
     });
   } catch (error) {
     return next(error);
@@ -53,6 +89,9 @@ const loginUser = async (req, res, next) => {
       throw new Error('Invalid credentials');
     }
 
+    const { accessToken, refreshToken } = await issueTokenPair(user);
+    setAuthCookies(res, { accessToken, refreshToken });
+
     return res.status(200).json({
       message: 'Login successful',
       user: {
@@ -60,8 +99,94 @@ const loginUser = async (req, res, next) => {
         name: user.name,
         email: user.email,
       },
-      token: generateToken(user._id),
     });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const refreshAccessToken = async (req, res, next) => {
+  try {
+    const refreshToken = getRefreshTokenFromRequest(req);
+
+    if (!refreshToken) {
+      return res.status(401).json({ message: 'Refresh token is required' });
+    }
+
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, {
+      issuer: jwtIssuer,
+      audience: jwtAudience,
+      algorithms: ['HS256'],
+    });
+
+    if (decoded.tokenType !== 'refresh') {
+      res.status(401);
+      throw new Error('Invalid refresh token');
+    }
+
+    const user = await User.findById(decoded.userId).select('+refreshTokens');
+
+    if (!user) {
+      res.status(401);
+      throw new Error('Invalid refresh token');
+    }
+
+    const providedHash = hashToken(refreshToken);
+    const matchedToken = (user.refreshTokens || []).find(
+      (entry) => entry.tokenHash === providedHash && entry.expiresAt > new Date()
+    );
+
+    if (!matchedToken) {
+      user.refreshTokens = [];
+      await user.save();
+      clearAuthCookies(res);
+      res.status(401);
+      throw new Error('Refresh token reuse detected');
+    }
+
+    user.refreshTokens = user.refreshTokens.filter(
+      (entry) => entry.tokenHash !== providedHash && entry.expiresAt > new Date()
+    );
+    await user.save();
+
+    const { accessToken, refreshToken: rotatedRefreshToken } = await issueTokenPair(user);
+    setAuthCookies(res, { accessToken, refreshToken: rotatedRefreshToken });
+
+    return res.status(200).json({
+      message: 'Token refreshed successfully',
+    });
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      clearAuthCookies(res);
+      return res.status(401).json({ message: 'Invalid refresh token' });
+    }
+
+    return next(error);
+  }
+};
+
+const logoutUser = async (req, res, next) => {
+  try {
+    const refreshToken = getRefreshTokenFromRequest(req);
+
+    if (refreshToken) {
+      const decoded = jwt.decode(refreshToken);
+
+      if (decoded && decoded.userId) {
+        const user = await User.findById(decoded.userId).select('+refreshTokens');
+
+        if (user) {
+          const providedHash = hashToken(refreshToken);
+          user.refreshTokens = (user.refreshTokens || []).filter(
+            (entry) => entry.tokenHash !== providedHash && entry.expiresAt > new Date()
+          );
+          await user.save();
+        }
+      }
+    }
+
+    clearAuthCookies(res);
+    return res.status(200).json({ message: 'Logout successful' });
   } catch (error) {
     return next(error);
   }
@@ -69,7 +194,7 @@ const loginUser = async (req, res, next) => {
 
 const getProfile = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
+    const user = await User.findById(req.user.id).select('-password -refreshTokens');
 
     if (!user) {
       res.status(404);
@@ -82,4 +207,10 @@ const getProfile = async (req, res, next) => {
   }
 };
 
-module.exports = { registerUser, loginUser, getProfile };
+module.exports = {
+  registerUser,
+  loginUser,
+  refreshAccessToken,
+  logoutUser,
+  getProfile,
+};

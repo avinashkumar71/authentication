@@ -7,7 +7,10 @@ This project contains a starter backend structure for the authentication module 
 - MongoDB connection with Mongoose
 - Auth routes for register/login/profile
 - JWT-based route protection
+- Access + refresh token architecture with rotation support
+- Secure token storage using HttpOnly cookies
 - Request validation with `express-validator`
+- Basic hardening: secure headers, CORS allowlist, auth rate limiting
 - Centralized error handling
 
 ## Project structure
@@ -31,6 +34,7 @@ src/
     authRoutes.js
   utils/
     generateToken.js
+    tokenCookies.js
   validators/
     authValidators.js
 ```
@@ -52,5 +56,18 @@ src/
 ## API endpoints
 - `POST /api/auth/register`
 - `POST /api/auth/login`
-- `GET /api/auth/me` (requires `Authorization: Bearer <token>`)
+- `POST /api/auth/refresh-token`
+- `POST /api/auth/logout`
+- `GET /api/auth/me` (reads `accessToken` cookie; `Authorization: Bearer <access_token>` also supported)
 - `GET /api/health`
+
+## Token architecture notes
+- Login/register issue an **access token + refresh token** pair and store them in HttpOnly cookies.
+- Refresh token is stored as SHA-256 hash in DB and rotated on refresh.
+- Access token verification enforces issuer, audience, algorithm, and `tokenType=access`.
+- If a reused/unknown refresh token is detected, all stored refresh tokens for that user are revoked.
+
+## Token storage notes
+- Cookies are `HttpOnly` and use `SameSite=lax` in development, `SameSite=strict` in production.
+- Cookies are marked `Secure` automatically in production (`NODE_ENV=production`).
+- For cross-origin frontend calls, set `CORS_ORIGINS` and send credentials from client requests.
